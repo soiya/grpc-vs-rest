@@ -2,19 +2,15 @@ package main
 
 import (
 	"crypto/tls"
-	"crypto/x509"
-	"testing"
-
-	//"testing"
 	"encoding/json"
-	"io/ioutil"
-	"log"
-	"net/http"
-	"sync"
-
-	//"golang.org/x/net/http2"
 	"github.com/Bimde/grpc-vs-rest/pb"
 	"golang.org/x/net/http2"
+	"io/ioutil"
+	"log"
+	"net"
+	"net/http"
+	"sync"
+	"testing"
 )
 
 var client http.Client
@@ -23,38 +19,6 @@ func init() {
 	client = http.Client{}
 }
 
-// This code was taken from https://posener.github.io/http2/
-func createTLSConfigWithCustomCert() *tls.Config {
-	// Create a pool with the server certificate since it is not signed
-	// by a known CA
-	caCert, err := ioutil.ReadFile("server/server.crt")
-	if err != nil {
-		log.Fatalf("Reading server certificate: %s", err)
-	}
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(caCert)
-
-	// Create TLS configuration with the certificate of the server
-	return &tls.Config{
-		RootCAs: caCertPool,
-	}
-}
-
-// func BenchmarkHTTP2Get(b *testing.B) {
-// 	client.Transport = &http2.Transport{
-// 		TLSClientConfig: createTLSConfigWithCustomCert(),
-// 	}
-
-// 	var wg sync.WaitGroup
-// 	wg.Add(b.N)
-// 	for i := 0; i < b.N; i++ {
-// 		go func() {
-// 			get("https://bimde:8080", &pb.Random{})
-// 			wg.Done()
-// 		}()
-// 	}
-// 	wg.Wait()
-// }
 
 func get(path string, output interface{}) error {
 	req, err := http.NewRequest("GET", path, nil)
@@ -90,29 +54,32 @@ type Request struct {
 }
 
 const stopRequestPath = "STOP"
-const noWorkers = 4096
+const noWorkers = 128
 
 func BenchmarkHTTP2GetWithWokers(b *testing.B) {
 	client.Transport = &http2.Transport{
-		TLSClientConfig: createTLSConfigWithCustomCert(),
+		// So http2.Transport doesn't complain the URL scheme isn't 'https'
+		AllowHTTP: true,
+		// Pretend we are dialing a TLS endpoint. (Note, we ignore the passed tls.Config)
+		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+			return net.Dial(network, addr)
+		},
 	}
 	requestQueue := make(chan Request)
 	defer startWorkers(&requestQueue, noWorkers, startWorker)()
 	b.ResetTimer() // don't count worker initialization time
 	for i := 0; i < b.N; i++ {
-		requestQueue <- Request{Path: "https://bimde:8080", Random: &pb.Random{}}
+		requestQueue <- Request{Path: "http://localhost:8080", Random: &pb.Random{}}
 	}
 }
 
 func BenchmarkHTTP11Get(b *testing.B) {
-	client.Transport = &http.Transport{
-		TLSClientConfig: createTLSConfigWithCustomCert(),
-	}
+	client.Transport = &http.Transport{}
 	requestQueue := make(chan Request)
 	defer startWorkers(&requestQueue, noWorkers, startWorker)()
 	b.ResetTimer() // don't count worker initialization time
 	for i := 0; i < b.N; i++ {
-		requestQueue <- Request{Path: "https://bimde:8080", Random: &pb.Random{}}
+		requestQueue <- Request{Path: "http://localhost:8080", Random: &pb.Random{}}
 	}
 }
 

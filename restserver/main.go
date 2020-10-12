@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"log"
 	"net/http"
 
@@ -26,6 +28,7 @@ func handle(w http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
-	server := &http.Server{Addr: "bimde:8080", Handler: http.HandlerFunc(handle)}
-	log.Fatal(server.ListenAndServeTLS("../server/server.crt", "../server/server.key"))
+	h2s := &http2.Server{}
+	server := &http.Server{Addr: "localhost:8080", Handler: h2c.NewHandler(http.HandlerFunc(handle), h2s)}
+	log.Fatal(server.ListenAndServe())
 }

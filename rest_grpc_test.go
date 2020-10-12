@@ -2,29 +2,36 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
+	"github.com/Bimde/grpc-vs-rest/pb"
+	"golang.org/x/net/http2"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"testing"
 
-	"github.com/Bimde/grpc-vs-rest/pb"
 	"golang.org/x/net/context"
-	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
 )
 
-func BenchmarkHTTP2GetWithWokers(b *testing.B) {
+func BenchmarkHTTP2PostWithWokers(b *testing.B) {
 	client.Transport = &http2.Transport{
-		TLSClientConfig: createTLSConfigWithCustomCert(),
+		// So http2.Transport doesn't complain the URL scheme isn't 'https'
+		AllowHTTP: true,
+		// Pretend we are dialing a TLS endpoint. (Note, we ignore the passed tls.Config)
+		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+			return net.Dial(network, addr)
+		},
 	}
 	requestQueue := make(chan Request)
 	defer startWorkers(&requestQueue, noWorkers, startPostWorker)()
 	b.ResetTimer() // don't count worker initialization time
 	for i := 0; i < b.N; i++ {
 		requestQueue <- Request{
-			Path: "https://bimde:8080",
+			Path: "http://localhost:8080",
 			Random: &pb.Random{
 				RandomInt:    2019,
 				RandomString: "a_string",
@@ -34,7 +41,7 @@ func BenchmarkHTTP2GetWithWokers(b *testing.B) {
 }
 
 func BenchmarkGRPCWithWokers(b *testing.B) {
-	conn, err := grpc.Dial("bimde:9090", grpc.WithInsecure())
+	conn, err := grpc.Dial("localhost:9090", grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("Dial failed: %v", err)
 	}
